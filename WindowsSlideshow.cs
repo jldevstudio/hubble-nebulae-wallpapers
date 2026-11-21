@@ -57,7 +57,7 @@ namespace HubbleWallpaper
                 uint interval;
                 wallpaper.GetSlideshowOptions(out options, out interval);
                 if ((options & 1) == 0 || interval != milliseconds)
-                    throw new InvalidOperationException("Windows no confirmo el intervalo y orden aleatorio.");
+                    throw new InvalidOperationException("Windows did not confirm the slideshow interval and shuffle setting.");
             }
             finally
             {

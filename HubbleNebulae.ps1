@@ -1,6 +1,6 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 param(
-    [ValidateSet('Install','Sync','Enable','Stop')]
+    [ValidateSet('Install','Sync','Enable','Stop','Uninstall')]
     [string]$Action = 'Sync',
 
     [ValidateRange(1, 1440)]
@@ -10,7 +10,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Ejecuta este script con powershell.exe.' }
+if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Run this script with powershell.exe.' }
 $DataDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DataDirectory)
 $gallery = [uri]'https://science.nasa.gov/gallery/hubbles-nebulae/'
 $images = Join-Path $DataDirectory 'Fotos'
@@ -31,7 +31,7 @@ function Sync-Gallery {
         while ($page -and $visited.Add($page.AbsoluteUri)) {
             $html = (Invoke-WebRequest -Uri $page -UseBasicParsing -TimeoutSec 25).Content
             $cards = [regex]::Matches($html, '<a\b(?=[^>]*\bclass="[^"]*\bhds-gallery-image-link\b)[^>]*>(?:(?!</a>).)*?<img\b[^>]*\bsrc="([^"]+)"', 'Singleline')
-            if (!$cards.Count) { throw "No se encontraron fotos en $page" }
+            if (!$cards.Count) { throw "No images found at $page" }
 
             foreach ($card in $cards) {
                 $url = [uri][Net.WebUtility]::HtmlDecode($card.Groups[1].Value)
@@ -77,21 +77,21 @@ function Sync-Gallery {
             $page = if ($next.Success) { [uri]::new($gallery, $next.Groups[1].Value) }
             if ($page -and ($page.Host -ne $gallery.Host -or $page.Scheme -ne 'https' -or
                 $page.AbsolutePath -notmatch '^/gallery/hubbles-nebulae/page/\d+/$')) {
-                throw "La pagina siguiente no corresponde a la galeria: $page"
+                throw "The next page is outside the gallery: $page"
             }
         }
     } finally { $hash.Dispose() }
-    $summary = "Paginas: $($visited.Count). Fotos encontradas: $($seen.Count). Nuevas: $downloaded. Fallidas: $failed."
+    $summary = "Pages: $($visited.Count). Images found: $($seen.Count). New: $downloaded. Failed: $failed."
     Set-Content -LiteralPath (Join-Path $DataDirectory 'ultima-sincronizacion.txt') -Value @((Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz'), $summary)
     Write-Output $summary
     if (!(Get-ChildItem -LiteralPath $images -Filter '*.jpg' -File | Select-Object -First 1)) {
-        throw 'No hay fotos disponibles para el fondo.'
+        throw 'No images are available for the wallpaper.'
     }
-    if ($failed) { throw 'Algunas descargas fallaron. Las fotos descargadas se conservan.' }
+    if ($failed) { throw 'Some downloads failed. Previously downloaded images are still available.' }
 }
 
 function Enable-Slideshow {
-    if (!(Test-Path -LiteralPath $images -PathType Container)) { throw 'Primero ejecuta Sync.' }
+    if (!(Test-Path -LiteralPath $images -PathType Container)) { throw 'Run Sync first.' }
     Add-Type -Path (Join-Path $PSScriptRoot 'WindowsSlideshow.cs')
     [HubbleWallpaper.WindowsSlideshow]::Enable($images, [uint32]($Minutes * 60000))
 }
@@ -107,7 +107,7 @@ switch ($Action) {
         if ([IO.Path]::GetFullPath($runtime) -ne $PSScriptRoot) {
             Copy-Item -LiteralPath $PSCommandPath, (Join-Path $PSScriptRoot 'WindowsSlideshow.cs') -Destination $runtime -Force
         }
-        $script = Join-Path $runtime 'NebulosasHubble.ps1'
+        $script = Join-Path $runtime 'HubbleNebulae.ps1'
         $taskAction = New-ScheduledTaskAction -Execute $engine -Argument (
             '-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -WindowStyle Hidden -File "{0}" -Action Sync -DataDirectory "{1}"' -f $script, $DataDirectory
         )
@@ -117,9 +117,18 @@ switch ($Action) {
         Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $settings -User $user -Force | Out-Null
         Enable-Slideshow
     }
-    'Stop' {
+    { $_ -in 'Stop','Uninstall' } {
         if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
             Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+        }
+        if ($Action -eq 'Uninstall') {
+            $entry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\HubbleNebulaeWallpapers'
+            if (Test-Path -LiteralPath $entry) { Remove-Item -LiteralPath $entry }
+            $runtime = Join-Path $DataDirectory 'App'
+            foreach ($name in 'HubbleNebulae.ps1','NebulosasHubble.ps1','WindowsSlideshow.cs') {
+                $file = Join-Path $runtime $name
+                if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file }
+            }
         }
     }
 }

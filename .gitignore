@@ -3,3 +3,6 @@
 Fotos/
 App/
 ultima-sincronizacion.txt
+*.exe
+*.sha256
+dist/
