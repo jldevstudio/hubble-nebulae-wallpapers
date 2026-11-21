@@ -5,6 +5,8 @@ namespace HubbleWallpaper
 {
     public static class WindowsSlideshow
     {
+        private const uint Stretch = 2; // DWPOS_STRETCH
+
         // The declarations follow the order of IDesktopWallpaper in shobjidl_core.h.
         [ComImport, Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B")]
         [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -52,7 +54,13 @@ namespace HubbleWallpaper
                     Type.GetTypeFromCLSID(wallpaperClass, true));
 
                 wallpaper.SetSlideshow(array);
+                wallpaper.SetPosition(Stretch);
                 wallpaper.SetSlideshowOptions(1, milliseconds); // DSO_SHUFFLEIMAGES
+                uint position;
+                wallpaper.GetPosition(out position);
+                if (position != Stretch)
+                    throw new InvalidOperationException("Windows did not confirm the Stretch wallpaper setting.");
+
                 uint options;
                 uint interval;
                 wallpaper.GetSlideshowOptions(out options, out interval);
