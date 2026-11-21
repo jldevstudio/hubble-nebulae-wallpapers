@@ -6,6 +6,9 @@ param(
     [ValidateRange(1, 1440)]
     [int]$Minutes = 30,
 
+    [ValidateSet('Fill','BlurredEdges')]
+    [string]$Layout,
+
     [string]$DataDirectory = (Join-Path $env:LOCALAPPDATA 'NebulosasHubble')
 )
 
@@ -90,14 +93,28 @@ function Sync-Gallery {
     if ($failed) { throw 'Some downloads failed. Previously downloaded images are still available.' }
 }
 
+Add-Type -Path (Join-Path $PSScriptRoot 'WallpaperCanvas.cs') -ReferencedAssemblies System.Drawing.dll,System.Windows.Forms.dll
+$selectedLayout = if ($Layout) {
+    [HubbleWallpaper.WallpaperLayout]$Layout
+} else {
+    [HubbleWallpaper.WallpaperCanvas]::ReadLayout($DataDirectory)
+}
+
 function Enable-Slideshow {
     if (!(Test-Path -LiteralPath $images -PathType Container)) { throw 'Run Sync first.' }
     Add-Type -Path (Join-Path $PSScriptRoot 'WindowsSlideshow.cs')
-    [HubbleWallpaper.WindowsSlideshow]::Enable($images, [uint32]($Minutes * 60000))
+    $folder = [HubbleWallpaper.WallpaperCanvas]::Prepare($images, $DataDirectory, $selectedLayout)
+    [HubbleWallpaper.WindowsSlideshow]::Enable($folder, [uint32]($Minutes * 60000))
+    [HubbleWallpaper.WallpaperCanvas]::SaveLayout($DataDirectory, $selectedLayout)
 }
 
 switch ($Action) {
-    'Sync' { Sync-Gallery }
+    'Sync' {
+        Sync-Gallery
+        if ($selectedLayout -eq 'BlurredEdges') {
+            $null = [HubbleWallpaper.WallpaperCanvas]::Prepare($images, $DataDirectory, $selectedLayout)
+        }
+    }
     'Enable' { Enable-Slideshow }
     'Install' {
         Sync-Gallery
@@ -105,7 +122,7 @@ switch ($Action) {
         $runtime = Join-Path $DataDirectory 'App'
         $null = New-Item -ItemType Directory -Path $runtime -Force
         if ([IO.Path]::GetFullPath($runtime) -ne $PSScriptRoot) {
-            Copy-Item -LiteralPath $PSCommandPath, (Join-Path $PSScriptRoot 'WindowsSlideshow.cs') -Destination $runtime -Force
+            Copy-Item -LiteralPath $PSCommandPath, (Join-Path $PSScriptRoot 'WindowsSlideshow.cs'), (Join-Path $PSScriptRoot 'WallpaperCanvas.cs') -Destination $runtime -Force
         }
         $script = Join-Path $runtime 'HubbleNebulae.ps1'
         $taskAction = New-ScheduledTaskAction -Execute $engine -Argument (
@@ -125,7 +142,7 @@ switch ($Action) {
             $entry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\HubbleNebulaeWallpapers'
             if (Test-Path -LiteralPath $entry) { Remove-Item -LiteralPath $entry }
             $runtime = Join-Path $DataDirectory 'App'
-            foreach ($name in 'HubbleNebulae.ps1','NebulosasHubble.ps1','WindowsSlideshow.cs') {
+            foreach ($name in 'HubbleNebulae.ps1','NebulosasHubble.ps1','WindowsSlideshow.cs','WallpaperCanvas.cs','WallpaperCanvas.ps1') {
                 $file = Join-Path $runtime $name
                 if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file }
             }

@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Win32;
+using HubbleWallpaper;
 
 internal static class Setup
 {
@@ -17,9 +18,12 @@ internal static class Setup
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Length == 1 && args[0] == "--install")
+        if (args.Length > 0 && args.Length <= 2 && args[0] == "--install")
         {
-            try { Install(); return 0; }
+            WallpaperLayout layout = WallpaperCanvas.ReadLayout(DataFolder());
+            if (args.Length == 2 && (!Enum.TryParse(args[1], out layout) || !Enum.IsDefined(typeof(WallpaperLayout), layout)))
+                return 2;
+            try { Install(layout); return 0; }
             catch { return 1; }
         }
 
@@ -30,19 +34,21 @@ internal static class Setup
         using (var panel = new TableLayoutPanel())
         using (var message = new Label())
         using (var progress = new ProgressBar())
+        using (var layoutPicker = new ComboBox())
         using (var button = new Button())
         {
             window.Text = Product + " Setup";
             window.StartPosition = FormStartPosition.CenterScreen;
-            window.ClientSize = new Size(480, 230);
+            window.ClientSize = new Size(480, 268);
             window.FormBorderStyle = FormBorderStyle.FixedDialog;
             window.MaximizeBox = false;
 
             panel.Dock = DockStyle.Fill;
             panel.Padding = new Padding(20);
             panel.ColumnCount = 1;
-            panel.RowCount = 3;
+            panel.RowCount = 4;
             panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
             window.Controls.Add(panel);
@@ -51,6 +57,13 @@ internal static class Setup
             message.Dock = DockStyle.Fill;
             message.AutoEllipsis = true;
             panel.Controls.Add(message);
+            layoutPicker.DropDownStyle = ComboBoxStyle.DropDownList;
+            layoutPicker.AccessibleName = "Wallpaper layout";
+            layoutPicker.Width = 315;
+            layoutPicker.Items.Add("Fill screen (crop edges as needed)");
+            layoutPicker.Items.Add("Blurred edges (show the whole photo)");
+            layoutPicker.SelectedIndex = WallpaperCanvas.ReadLayout(DataFolder()) == WallpaperLayout.BlurredEdges ? 1 : 0;
+            panel.Controls.Add(layoutPicker);
             progress.Dock = DockStyle.Top;
             progress.Style = ProgressBarStyle.Marquee;
             progress.Visible = false;
@@ -68,12 +81,13 @@ internal static class Setup
             {
                 if (installed) { window.Close(); return; }
                 running = true;
-                button.Enabled = false;
+                button.Enabled = layoutPicker.Enabled = false;
                 progress.Visible = true;
                 message.Text = "Downloading images and configuring Windows. This may take a few minutes.";
                 try
                 {
-                    await Task.Run((Action)Install);
+                    var layout = layoutPicker.SelectedIndex == 1 ? WallpaperLayout.BlurredEdges : WallpaperLayout.Fill;
+                    await Task.Run(() => Install(layout));
                     message.Text = "Installation complete. Windows will change wallpapers every 30 minutes.\r\n\r\nYou can remove the daily sync from Settings > Apps.";
                     button.Text = "Finish";
                     installed = true;
@@ -87,6 +101,7 @@ internal static class Setup
                 {
                     progress.Visible = false;
                     button.Enabled = true;
+                    layoutPicker.Enabled = !installed;
                     running = false;
                 }
             };
@@ -95,7 +110,12 @@ internal static class Setup
         return 0;
     }
 
-    private static void Install()
+    private static string DataFolder()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NebulosasHubble");
+    }
+
+    private static void Install(WallpaperLayout layout)
     {
         string temp = Path.Combine(Path.GetTempPath(), "HubbleNebulae-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temp);
@@ -104,7 +124,7 @@ internal static class Setup
             using (var payload = Assembly.GetExecutingAssembly().GetManifestResourceStream("WallpaperPayload"))
             using (var archive = new ZipArchive(payload, ZipArchiveMode.Read))
             {
-                foreach (string name in new[] { "HubbleNebulae.ps1", "WindowsSlideshow.cs" })
+                foreach (string name in new[] { "HubbleNebulae.ps1", "WindowsSlideshow.cs", "WallpaperCanvas.cs" })
                 {
                     using (var source = archive.GetEntry(name).Open())
                     using (var destination = File.Create(Path.Combine(temp, name)))
@@ -118,7 +138,7 @@ internal static class Setup
             using (var process = new Process())
             {
                 process.StartInfo = new ProcessStartInfo(powershell,
-                    options + Quote(Path.Combine(temp, "HubbleNebulae.ps1")) + " -Action Install");
+                    options + Quote(Path.Combine(temp, "HubbleNebulae.ps1")) + " -Action Install -Layout " + layout);
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.CreateNoWindow = true;
                 process.StartInfo.RedirectStandardError = true;
@@ -133,7 +153,7 @@ internal static class Setup
                     throw new InvalidOperationException("Setup could not activate the wallpaper collection.\r\n\r\n" + errors.ToString().Trim());
             }
 
-            string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NebulosasHubble");
+            string data = DataFolder();
             string script = Path.Combine(data, @"App\HubbleNebulae.ps1");
             using (var key = Registry.CurrentUser.CreateSubKey(RegistryPath))
             {
@@ -148,7 +168,7 @@ internal static class Setup
         }
         finally
         {
-            foreach (string name in new[] { "HubbleNebulae.ps1", "WindowsSlideshow.cs" })
+            foreach (string name in new[] { "HubbleNebulae.ps1", "WindowsSlideshow.cs", "WallpaperCanvas.cs" })
                 File.Delete(Path.Combine(temp, name));
             Directory.Delete(temp);
         }

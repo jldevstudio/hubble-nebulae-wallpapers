@@ -13,9 +13,11 @@ internal sealed class DesktopApp : Form
     private const string Product = "Hubble Nebulae Wallpapers";
     private const uint HalfHour = 30 * 60 * 1000;
     private readonly Gallery gallery;
+    private readonly string dataFolder;
     private readonly string statePath;
     private readonly Button syncButton;
     private readonly Button applyButton;
+    private readonly ComboBox layoutPicker;
     private readonly Label status;
     private readonly NotifyIcon tray;
     private readonly System.Windows.Forms.Timer timer;
@@ -90,17 +92,19 @@ internal sealed class DesktopApp : Form
 
     private DesktopApp(string data)
     {
+        dataFolder = data;
         gallery = new Gallery(Path.Combine(data, "Wallpapers"));
         statePath = Path.Combine(data, "last-sync.txt");
 
         Text = Product;
-        ClientSize = new Size(525, 270);
-        MinimumSize = new Size(510, 285);
+        ClientSize = new Size(525, 302);
+        MinimumSize = new Size(510, 325);
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Font;
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1, RowCount = 4 };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1, RowCount = 5 };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 33));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
@@ -111,6 +115,12 @@ internal sealed class DesktopApp : Form
             Dock = DockStyle.Fill,
             Text = "Use images from NASA’s Hubble Nebulae gallery as your Windows wallpaper. Windows shuffles the downloaded collection every 30 minutes."
         });
+
+        layoutPicker = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 315, AccessibleName = "Wallpaper layout" };
+        layoutPicker.Items.Add("Fill screen (crop edges as needed)");
+        layoutPicker.Items.Add("Blurred edges (show the whole photo)");
+        layoutPicker.SelectedIndex = WallpaperCanvas.ReadLayout(dataFolder) == WallpaperLayout.BlurredEdges ? 1 : 0;
+        layout.Controls.Add(layoutPicker);
 
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
         syncButton = new Button { Text = "Sync Gallery", AutoSize = true };
@@ -163,18 +173,28 @@ internal sealed class DesktopApp : Form
         if (working)
             return;
         working = true;
-        syncButton.Enabled = applyButton.Enabled = false;
+        syncButton.Enabled = applyButton.Enabled = layoutPicker.Enabled = false;
         status.Text = "Checking the NASA gallery. The first download can take a few minutes.";
         try
         {
-            string summary = await Task.Run(() => gallery.SyncAsync());
-            DateTime finished = DateTime.UtcNow;
-            File.WriteAllText(statePath, finished.ToString("O"));
-            nextSync = finished.AddDays(1);
+            var layout = apply
+                ? (layoutPicker.SelectedIndex == 1 ? WallpaperLayout.BlurredEdges : WallpaperLayout.Fill)
+                : WallpaperCanvas.ReadLayout(dataFolder);
+            bool sync = !apply || !Directory.Exists(gallery.Folder) || Directory.GetFiles(gallery.Folder, "*.jpg").Length == 0;
+            string summary = sync ? await Task.Run(() => gallery.SyncAsync()) : "Using images already downloaded.";
+            string folder = await Task.Run(() => WallpaperCanvas.Prepare(gallery.Folder, dataFolder, layout));
+            if (sync)
+            {
+                DateTime finished = DateTime.UtcNow;
+                File.WriteAllText(statePath, finished.ToString("O"));
+                nextSync = finished.AddDays(1);
+            }
+
             status.Text = summary;
             if (apply)
             {
-                WindowsSlideshow.Enable(gallery.Folder, HalfHour);
+                WindowsSlideshow.Enable(folder, HalfHour);
+                WallpaperCanvas.SaveLayout(dataFolder, layout);
                 status.Text += Environment.NewLine + "Windows wallpaper slideshow enabled.";
             }
         }
@@ -186,7 +206,7 @@ internal sealed class DesktopApp : Form
         }
         finally
         {
-            syncButton.Enabled = applyButton.Enabled = true;
+            syncButton.Enabled = applyButton.Enabled = layoutPicker.Enabled = true;
             working = false;
         }
     }

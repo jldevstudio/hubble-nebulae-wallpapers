@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory)]
     [string]$MakeAppx,
     [string]$OutputDirectory = (Join-Path (Split-Path $PSScriptRoot) 'dist'),
-    [version]$Version = '1.2.0.0',
+    [version]$Version = '1.2.1.0',
     [string]$PackageName,
     [string]$Publisher,
     [string]$PublisherDisplayName,
@@ -69,7 +69,7 @@ try {
         '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Net.Http.dll', '/reference:System.Xaml.dll',
         "/reference:$wpf\WindowsBase.dll", "/reference:$wpf\PresentationCore.dll", "/out:$app",
         (Join-Path $PSScriptRoot 'DesktopApp.cs'), (Join-Path $PSScriptRoot 'Gallery.cs'),
-        (Join-Path (Split-Path $PSScriptRoot) 'WindowsSlideshow.cs')
+        (Join-Path (Split-Path $PSScriptRoot) 'WindowsSlideshow.cs'), (Join-Path (Split-Path $PSScriptRoot) 'WallpaperCanvas.cs')
     )
     if ($sample) { $compilerArgs += '/define:PREVIEW' }
     & $compiler @compilerArgs
