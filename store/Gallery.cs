@@ -29,11 +29,46 @@ internal sealed class Gallery
         Folder = folder;
     }
 
-    internal async Task<string> SyncAsync()
+    internal sealed class Progress
+    {
+        internal readonly int Processed;
+        internal readonly int Total;
+        internal readonly int Failed;
+
+        internal Progress(int processed, int total, int failed)
+        {
+            Processed = processed;
+            Total = total;
+            Failed = failed;
+        }
+    }
+
+    internal sealed class Result
+    {
+        internal readonly int Available;
+        internal readonly int Saved;
+        internal readonly int Failed;
+
+        internal Result(int available, int saved, int failed)
+        {
+            Available = available;
+            Saved = saved;
+            Failed = failed;
+        }
+
+        public override string ToString()
+        {
+            return string.Format("{0} wallpapers ready. {1} new.{2}", Available, Saved,
+                Failed == 0 ? "" : string.Format(" {0} could not be downloaded.", Failed));
+        }
+    }
+
+    internal async Task<Result> SyncAsync(IProgress<Progress> progress = null)
     {
         Directory.CreateDirectory(Folder);
         var pages = new HashSet<Uri>();
         var images = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new List<KeyValuePair<Uri, string>>();
         int saved = 0;
         int failed = 0;
 
@@ -59,22 +94,8 @@ internal sealed class Gallery
                     string key = BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(image.AbsolutePath)))
                         .Replace("-", "").Substring(0, 24);
                     string target = Path.Combine(Folder, key + ".jpg");
-                    if (File.Exists(target))
-                        continue;
-
-                    try
-                    {
-                        await DownloadJpegAsync(image, target).ConfigureAwait(false);
-                        saved++;
-                    }
-                    catch (Exception error)
-                    {
-                        if (!(error is HttpRequestException || error is TaskCanceledException ||
-                              error is IOException || error is NotSupportedException ||
-                              error is System.Runtime.InteropServices.COMException))
-                            throw;
-                        failed++;
-                    }
+                    if (!File.Exists(target))
+                        pending.Add(new KeyValuePair<Uri, string>(image, target));
                 }
 
                 Match next = NextPage.Match(html);
@@ -85,10 +106,33 @@ internal sealed class Gallery
             }
         }
 
-        if (Directory.GetFiles(Folder, "*.jpg").Length == 0)
+        if (pending.Count != 0 && progress != null)
+            progress.Report(new Progress(0, pending.Count, 0));
+        foreach (var image in pending)
+        {
+            try
+            {
+                await DownloadJpegAsync(image.Key, image.Value).ConfigureAwait(false);
+                saved++;
+            }
+            catch (Exception error)
+            {
+                if (!(error is HttpRequestException || error is TaskCanceledException ||
+                      error is IOException || error is NotSupportedException ||
+                      error is System.Runtime.InteropServices.COMException))
+                    throw;
+                failed++;
+            }
+
+            if (progress != null)
+                progress.Report(new Progress(saved + failed, pending.Count, failed));
+        }
+
+        int available = Directory.GetFiles(Folder, "*.jpg").Length;
+        if (available == 0)
             throw new InvalidOperationException("No images could be downloaded. Try syncing again later.");
 
-        return string.Format("{0} images in gallery. {1} new. {2} failed.", images.Count, saved, failed);
+        return new Result(available, saved, failed);
     }
 
     private static async Task DownloadJpegAsync(Uri original, string target)

@@ -1,6 +1,8 @@
 # Microsoft Store edition
 
-The MSIX edition is a Windows desktop app. Open it, choose **Fill screen** or **Blurred edges**, and select **Set Wallpaper Slideshow** to download images and enable the native Windows slideshow. After the first sync it checks the gallery about once a day while running. Closing the window keeps the app in the notification area, where **Exit** closes it completely. Startup is disabled by default. The app links to Windows Startup Apps settings.
+The MSIX edition is a Windows desktop app. Choose **Download / Sync** to fetch new images. The progress bar reports how many images have been processed. Downloads keep running if you minimize the window to the taskbar. Closing the window keeps the app in the notification area, where **Exit** closes it completely. After the first sync, the app checks for new photos about once a day while running. Startup is disabled by default. The app links to Windows Startup Apps settings.
+
+**Apply wallpaper automatically after downloading** is on by default and can be disabled. The app remembers this choice. **Apply Wallpapers** applies the selected layout to images already downloaded, including when offline. Choose **Fill screen** or **Blurred edges** before applying.
 
 Blurred edges shows the whole photo and fills the spare space with a softened copy. The canvas uses the primary display resolution. Reapply the slideshow after changing that resolution.
 
