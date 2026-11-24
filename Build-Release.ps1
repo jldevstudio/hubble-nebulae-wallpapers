@@ -37,7 +37,7 @@ using System.Reflection;
     & $compiler /nologo /target:winexe /platform:anycpu /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.IO.Compression.dll "/resource:$payload,WallpaperPayload" "/out:$exe" Setup.cs WallpaperCanvas.cs $info
     if ($LASTEXITCODE -ne 0) { throw 'Setup compilation failed.' }
 
-    Compress-Archive -Path Install.cmd,Disable.cmd,HubbleNebulae.ps1,WindowsSlideshow.cs,WallpaperCanvas.cs,Setup.cs,Build-Release.ps1,LICENSE,README.md -DestinationPath $zip -Force
+    Compress-Archive -Path Install.cmd,Disable.cmd,HubbleNebulae.ps1,WindowsSlideshow.cs,WallpaperCanvas.cs,Setup.cs,Build-Release.ps1,LICENSE,README.md,GitHub-Install.md -DestinationPath $zip -Force
     Get-FileHash -LiteralPath $exe,$zip -Algorithm SHA256 | ForEach-Object {
         '{0}  {1}' -f $_.Hash.ToLowerInvariant(), (Split-Path $_.Path -Leaf)
     } | Set-Content -LiteralPath $checksum -Encoding ASCII
